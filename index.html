@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Magazine Flipbook</title>
 
-  <!-- PageFlip from CDN -->
+  <!-- PageFlip (CDN) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.min.css">
 
   <style>
@@ -18,8 +18,9 @@
 
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
   <script>
+    // Keep your page proportions (2550x3300 -> 772x1000)
     const book = new St.PageFlip(document.getElementById('book'), {
-      width: 772,     // matches 2550x3300 ratio
+      width: 772,
       height: 1000,
       size: 'stretch',
       showCover: true,
@@ -27,22 +28,38 @@
       mobileScrollSupport: true
     });
 
-    const total = 17;  // <-- your count
+    const TOTAL = 17;        // total images
+    const FOLDER = 'Pages';  // folder name (case-sensitive)
 
-    // First page is literally "Page.jpg" (capital P)
-    const pages = ['Pages/Page.jpg'];
-
-    // Then Page1.jpg, Page2.jpg, ..., Page34.jpg
-    for (let i = 1; i < total; i++) {
-      pages.push(`Pages/Page${i}.jpg`);
-    }
-
-    book.loadFromImages(pages);
-
-    document.addEventListener('keydown', e => {
-      if (e.key === 'ArrowRight') book.flipNext();
-      if (e.key === 'ArrowLeft') book.flipPrev();
+    // Small helper to see if an image exists
+    const probe = (src) => new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(src);
+      i.onerror = () => rej(src);
+      i.src = src + '?v=' + Date.now(); // cache-bust
     });
+
+    (async () => {
+      let pages = [];
+      // Prefer a dedicated cover if present
+      try {
+        await probe(`${FOLDER}/Page.jpg`);
+        pages.push(`${FOLDER}/Page.jpg`);        // cover
+        // Then Page1..Page16 (total 17 including cover)
+        for (let n = 1; n <= TOTAL - 1; n++) pages.push(`${FOLDER}/Page${n}.jpg`);
+      } catch {
+        // No Page.jpg — assume Page1..Page17
+        for (let n = 1; n <= TOTAL; n++) pages.push(`${FOLDER}/Page${n}.jpg`);
+      }
+
+      book.loadFromImages(pages);
+
+      // Optional keyboard nav
+      document.addEventListener('keydown', e => {
+        if (e.key === 'ArrowRight') book.flipNext();
+        if (e.key === 'ArrowLeft') book.flipPrev();
+      });
+    })();
   </script>
 </body>
 </html>

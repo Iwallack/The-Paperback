@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Magazine Flipbook</title>
 
-  <!-- PageFlip CSS -->
+  <!-- PageFlip CDN -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.min.css">
 
   <style>
@@ -16,47 +16,82 @@
 <body>
   <div id="book"></div>
 
-  <!-- PageFlip JS -->
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
   <script>
-    // Match your 2550x3300 pages (keeps proportions, no warping)
+    // Keep your 2550x3300 aspect ratio
     const book = new St.PageFlip(document.getElementById('book'), {
-      width: 772,
-      height: 1000,
-      size: 'stretch',
-      showCover: true,
-      maxShadowOpacity: 0.2,
-      mobileScrollSupport: true
+      width: 772, height: 1000, size: 'stretch',
+      showCover: true, maxShadowOpacity: 0.2, mobileScrollSupport: true
     });
 
-    // EXACT filenames in order (17 total)
-    const pages = [
-      'Pages/Page.jpg',   // cover
-      'Pages/Page2.jpg',
-      'Pages/Page3.jpg',
-      'Pages/Page4.jpg',
-      'Pages/Page5.jpg',
-      'Pages/Page6.jpg',
-      'Pages/Page7.jpg',
-      'Pages/Page8.jpg',
-      'Pages/Page9.jpg',
-      'Pages/Page10.jpg',
-      'Pages/Page11.jpg',
-      'Pages/Page12.jpg',
-      'Pages/Page13.jpg',
-      'Pages/Page14.jpg',
-      'Pages/Page15.jpg',
-      'Pages/Page16.jpg',
-      'Pages/Page17.jpg'
-    ];
+    const TOTAL = 17;              // total images you want in the book
+    const FOLDER = 'Pages';        // case-sensitive
+    const EXTS = ['.jpg', '.JPG', '.jpeg', '.png']; // try these extensions
 
-    book.loadFromImages(pages);
+    // try multiple filename variants for each page number (Page2, Page02, etc.)
+    const candidatesFor = (n) => {
+      const num = String(n);
+      const num2 = String(n).padStart(2, '0'); // zero-padded
+      const bases = [`Page${num}`, `Page${num2}`];
+      const out = [];
+      for (const b of bases) for (const e of EXTS) out.push(`${FOLDER}/${b}${e}`);
+      return out;
+    };
 
-    // Optional: arrow keys
-    document.addEventListener('keydown', e => {
-      if (e.key === 'ArrowRight') book.flipNext();
-      if (e.key === 'ArrowLeft') book.flipPrev();
+    const probe = (src) => new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(src);
+      img.onerror = () => rej(src);
+      img.src = src + '?v=' + Date.now(); // cache-bust
     });
-  </script>
-</body>
-</html>
+
+    (async () => {
+      const pages = [];
+
+      // 1) Cover: Page.jpg / Page.JPG (fail loudly if missing)
+      let coverFound = false;
+      for (const c of [`${FOLDER}/Page.jpg`, `${FOLDER}/Page.JPG`, `${FOLDER}/Page.jpeg`, `${FOLDER}/Page.png`]) {
+        try { await probe(c); pages.push(c); coverFound = true; break; } catch {}
+      }
+      if (!coverFound) {
+        alert(`Cover not found. Expected one of:
+${FOLDER}/Page.jpg
+${FOLDER}/Page.JPG
+${FOLDER}/Page.jpeg
+${FOLDER}/Page.png`);
+        return;
+      }
+
+      // 2) Remaining pages: fill TOTAL-1 pages starting from the smallest existing number
+      //    (supports Page1.jpg OR starting at Page2.jpg if Page1 doesn't exist)
+      let nextNum = 1;
+      // See if Page1.* exists; if not, try Page2.*
+      const hasPage1 = await (async () => {
+        for (const c of candidatesFor(1)) { try { await probe(c); return c; } catch {} }
+        return null;
+      })();
+      if (!hasPage1) nextNum = 2;
+
+      while (pages.length < TOTAL) {
+        let found = null;
+        for (const c of candidatesFor(nextNum)) {
+          try { await probe(c); found = c; break; } catch {}
+        }
+        if (!found) {
+          alert(`Missing image for Page${nextNum}.
+Tried:
+${candidatesFor(nextNum).join('\n')}
+Rename the file in GitHub, or adjust this list.`);
+          return;
+        }
+        pages.push(found);
+        nextNum++;
+      }
+
+      // 3) Load
+      book.loadFromImages(pages);
+
+      // Optional arrows
+      document.addEventListener('keydown', e => {
+        if (e.key === 'ArrowRight') book.flipNext();
+        if (e.key === 'ArrowLeft') book.flipP

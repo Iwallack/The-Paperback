@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Magazine Flipbook</title>
 
-  <!-- PageFlip (CDN) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.min.css">
-
   <style>
     html, body { height: 100%; margin: 0; background: #111; }
     #book { width: 100%; max-width: 1100px; height: 700px; margin: 24px auto; }
@@ -18,20 +16,15 @@
 
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
   <script>
-    // Keep your page proportions (2550x3300 -> 772x1000)
+    const TOTAL = 17;              // total images you want in the flipbook
+    const FOLDER = 'Pages';        // case-sensitive
+    const EXTS = ['.jpg', '.JPG']; // try both just in case
+
     const book = new St.PageFlip(document.getElementById('book'), {
-      width: 772,
-      height: 1000,
-      size: 'stretch',
-      showCover: true,
-      maxShadowOpacity: 0.2,
-      mobileScrollSupport: true
+      width: 772, height: 1000, size: 'stretch',
+      showCover: true, maxShadowOpacity: 0.2, mobileScrollSupport: true
     });
 
-    const TOTAL = 17;        // total images
-    const FOLDER = 'Pages';  // folder name (case-sensitive)
-
-    // Small helper to see if an image exists
     const probe = (src) => new Promise((res, rej) => {
       const i = new Image();
       i.onload = () => res(src);
@@ -39,22 +32,53 @@
       i.src = src + '?v=' + Date.now(); // cache-bust
     });
 
+    async function tryAny(basenames) {
+      for (const base of basenames) {
+        for (const ext of EXTS) {
+          try { return await probe(`${FOLDER}/${base}${ext}`); } catch {}
+        }
+      }
+      return null;
+    }
+
     (async () => {
-      let pages = [];
-      // Prefer a dedicated cover if present
-      try {
-        await probe(`${FOLDER}/Page.jpg`);
-        pages.push(`${FOLDER}/Page.jpg`);        // cover
-        // Then Page1..Page16 (total 17 including cover)
-        for (let n = 1; n <= TOTAL - 1; n++) pages.push(`${FOLDER}/Page${n}.jpg`);
-      } catch {
-        // No Page.jpg — assume Page1..Page17
-        for (let n = 1; n <= TOTAL; n++) pages.push(`${FOLDER}/Page${n}.jpg`);
+      const pages = [];
+
+      // 1) Cover: prefer Page.jpg / Page.JPG
+      const cover = await tryAny(['Page']);
+      if (cover) pages.push(cover);
+
+      // 2) Decide where numbering starts: Page1 or Page2
+      //    We want a total of TOTAL images including cover (if present).
+      const remaining = TOTAL - pages.length;
+
+      let start = 1;
+      const page1 = await tryAny(['Page1']);
+      if (!page1) {
+        const page2 = await tryAny(['Page2']);
+        if (page2) start = 2; // start at Page2 if Page1 doesn't exist
+        else {
+          alert(`Can't find Page1.jpg or Page2.jpg in ${FOLDER}/`);
+          return;
+        }
       }
 
+      // 3) Build the rest of the pages sequentially from 'start'
+      const firstNum = start;
+      const lastNum  = start + remaining - 1;
+      for (let n = firstNum; n <= lastNum; n++) {
+        const found = await tryAny([`Page${n}`]);
+        if (!found) {
+          alert(`Missing image for Page${n}. Tried ${EXTS.map(e=>`${FOLDER}/Page${n}${e}`).join(' or ')}`);
+          return;
+        }
+        pages.push(found);
+      }
+
+      // 4) Load
       book.loadFromImages(pages);
 
-      // Optional keyboard nav
+      // Optional arrows
       document.addEventListener('keydown', e => {
         if (e.key === 'ArrowRight') book.flipNext();
         if (e.key === 'ArrowLeft') book.flipPrev();

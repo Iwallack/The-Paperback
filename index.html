@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Magazine Flipbook</title>
 
-  <!-- PageFlip from CDN (pinned version) -->
+  <!-- PageFlip from CDN -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.min.css">
 
   <style>
@@ -18,25 +18,27 @@
 
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
   <script>
-    // Match your image aspect ratio (2550x3300 => 772x1000 keeps the same ratio)
     const book = new St.PageFlip(document.getElementById('book'), {
-      width: 772,
+      width: 772,     // matches 2550x3300 ratio
       height: 1000,
       size: 'stretch',
-      showCover: true,          // Page 1 shows as a single cover
+      showCover: true,
       maxShadowOpacity: 0.2,
       mobileScrollSupport: true
     });
 
-    // You said: 35 total pages; first file is literally Pages/page.jpg,
-    // then Pages/Page2.jpg, Pages/Page3.jpg, ... Pages/Page35.jpg
-    const total = 35;
+    const total = 35;  // <-- your count
+
+    // First page is literally "Page.jpg" (capital P)
     const pages = ['Pages/Page.jpg'];
-    for (let i = 2; i <= total; i++) Pages.push(`Pages/Page${i}.jpg`);
+
+    // Then Page1.jpg, Page2.jpg, ..., Page34.jpg
+    for (let i = 1; i < total; i++) {
+      pages.push(`Pages/Page${i}.jpg`);
+    }
 
     book.loadFromImages(pages);
 
-    // Optional keyboard navigation
     document.addEventListener('keydown', e => {
       if (e.key === 'ArrowRight') book.flipNext();
       if (e.key === 'ArrowLeft') book.flipPrev();
@@ -44,4 +46,3 @@
   </script>
 </body>
 </html>
-

@@ -1,11 +1,12 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <title>Test Page</title>
-  </head>
-  <body style="background:#111; color:white; font-family:sans-serif;">
-    <h1>Hello from GitHub Pages</h1>
-    <p>If you can see this, your site is working and serving the file correctly.</p>
+  <body style="background:#111;color:white;font-family:sans-serif;">
+    <h1>Canvas Test</h1>
+    <canvas id="c" width="400" height="400" style="border:2px solid white;"></canvas>
+    <script>
+      const ctx = document.getElementById('c').getContext('2d');
+      ctx.fillStyle = 'blue';
+      ctx.fillRect(0,0,400,400);
+    </script>
   </body>
 </html>

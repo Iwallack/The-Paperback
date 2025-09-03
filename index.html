@@ -5,93 +5,138 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Magazine Flipbook</title>
 
-  <!-- PageFlip CDN -->
+  <!-- PageFlip CSS (optional but fine to keep) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.min.css">
 
   <style>
-    html, body { height: 100%; margin: 0; background: #111; }
+    html, body { height: 100%; margin: 0; background: #111; color: #eee; }
     #book { width: 100%; max-width: 1100px; height: 700px; margin: 24px auto; }
+    .status { text-align: center; font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; opacity: .85; }
+    .controls { display: flex; gap: 12px; justify-content: center; margin-bottom: 8px; }
+    button { cursor: pointer; padding: 6px 10px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #eee; }
   </style>
 </head>
 <body>
-  <div id="book"></div>
+  <div class="controls">
+    <button id="prevBtn" aria-label="Previous page">◀︎ Prev</button>
+    <span id="label" class="status">Loading…</span>
+    <button id="nextBtn" aria-label="Next page">Next ▶︎</button>
+  </div>
+  <div id="book" aria-label="Flipbook"></div>
+  <div id="error" class="status" role="alert" style="display:none"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
   <script>
-    // Keep your 2550x3300 aspect ratio
-    const book = new St.PageFlip(document.getElementById('book'), {
-      width: 772, height: 1000, size: 'stretch',
-      showCover: true, maxShadowOpacity: 0.2, mobileScrollSupport: true
-    });
+    // Config you intended to use
+    const TOTAL  = 17;          // total pages in the book, including the cover
+    const FOLDER = 'Pages';     // case-sensitive folder name on GitHub
+    const EXTS   = ['.jpg', '.JPG', '.jpeg', '.png'];
 
-    const TOTAL = 17;              // total images you want in the book
-    const FOLDER = 'Pages';        // case-sensitive
-    const EXTS = ['.jpg', '.JPG', '.jpeg', '.png']; // try these extensions
+    const $book  = document.getElementById('book');
+    const $err   = document.getElementById('error');
+    const $label = document.getElementById('label');
+    const $prev  = document.getElementById('prevBtn');
+    const $next  = document.getElementById('nextBtn');
 
-    // try multiple filename variants for each page number (Page2, Page02, etc.)
+    // Build candidate filenames, e.g., Page1.jpg, Page01.JPG, etc.
     const candidatesFor = (n) => {
-      const num = String(n);
-      const num2 = String(n).padStart(2, '0'); // zero-padded
+      const num = String(n), num2 = String(n).padStart(2, '0');
       const bases = [`Page${num}`, `Page${num2}`];
       const out = [];
       for (const b of bases) for (const e of EXTS) out.push(`${FOLDER}/${b}${e}`);
       return out;
     };
 
-    const probe = (src) => new Promise((res, rej) => {
+    const probe = (src) => new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => res(src);
-      img.onerror = () => rej(src);
-      img.src = src + '?v=' + Date.now(); // cache-bust
+      img.onload = () => resolve(src);
+      img.onerror = () => reject(src);
+      img.src = src + '?v=' + Date.now(); // cache-bust to avoid stale 404s
     });
 
+    function showError(msg) {
+      $err.style.display = 'block';
+      $err.textContent = msg;
+    }
+
     (async () => {
-      const pages = [];
-
-      // 1) Cover: Page.jpg / Page.JPG (fail loudly if missing)
-      let coverFound = false;
-      for (const c of [`${FOLDER}/Page.jpg`, `${FOLDER}/Page.JPG`, `${FOLDER}/Page.jpeg`, `${FOLDER}/Page.png`]) {
-        try { await probe(c); pages.push(c); coverFound = true; break; } catch {}
-      }
-      if (!coverFound) {
-        alert(`Cover not found. Expected one of:
-${FOLDER}/Page.jpg
-${FOLDER}/Page.JPG
-${FOLDER}/Page.jpeg
-${FOLDER}/Page.png`);
-        return;
-      }
-
-      // 2) Remaining pages: fill TOTAL-1 pages starting from the smallest existing number
-      //    (supports Page1.jpg OR starting at Page2.jpg if Page1 doesn't exist)
-      let nextNum = 1;
-      // See if Page1.* exists; if not, try Page2.*
-      const hasPage1 = await (async () => {
-        for (const c of candidatesFor(1)) { try { await probe(c); return c; } catch {} }
-        return null;
-      })();
-      if (!hasPage1) nextNum = 2;
-
-      while (pages.length < TOTAL) {
-        let found = null;
-        for (const c of candidatesFor(nextNum)) {
-          try { await probe(c); found = c; break; } catch {}
+      try {
+        // 1) Find a cover (Page.jpg, .JPG, .jpeg, .png)
+        const coverCandidates = ['.jpg', '.JPG', '.jpeg', '.png'].map(ext => `${FOLDER}/Page${ext}`);
+        let cover = null;
+        for (const c of coverCandidates) {
+          try { cover = await probe(c); break; } catch {}
         }
-        if (!found) {
-          alert(`Missing image for Page${nextNum}.
-Tried:
-${candidatesFor(nextNum).join('\n')}
-Rename the file in GitHub, or adjust this list.`);
+        if (!cover) {
+          showError(
+            `Cover not found. Expected one of:\n${coverCandidates.join('\n')}\n\n` +
+            `Check exact names and case on GitHub (case-sensitive).`
+          );
           return;
         }
-        pages.push(found);
-        nextNum++;
+
+        // 2) Determine whether Page1 exists, otherwise start at Page2
+        let startNum = 1;
+        let page1Exists = false;
+        for (const c of candidatesFor(1)) { try { await probe(c); page1Exists = true; break; } catch {} }
+        if (!page1Exists) startNum = 2;
+
+        // 3) Collect remaining pages until TOTAL is reached
+        const pages = [cover];
+        let n = startNum;
+        while (pages.length < TOTAL) {
+          let found = null;
+          for (const c of candidatesFor(n)) { try { await probe(c); found = c; break; } catch {} }
+          if (!found) {
+            showError(
+              `Missing image for Page${n}.\nTried:\n${candidatesFor(n).join('\n')}\n\n` +
+              `Rename or upload the file in ${FOLDER}/, or adjust the code.`
+            );
+            return;
+          }
+          pages.push(found);
+          n++;
+        }
+
+        // 4) Init PageFlip
+        const book = new St.PageFlip($book, {
+          width: 772,
+          height: 1000,
+          size: 'stretch',
+          showCover: true,
+          mobileScrollSupport: true,
+          drawShadow: true,
+          flippingTime: 800,
+        });
+
+        book.loadFromImages(pages);
+
+        // 5) UI wiring
+        const updateLabel = () => {
+          const total = book.getPageCount();
+          const current = book.getCurrentPageIndex() + 1;
+          $label.textContent = `Page ${current} of ${total}`;
+          $prev.disabled = current <= 1;
+          $next.disabled = current >= total;
+        };
+
+        $prev.addEventListener('click', () => book.flipPrev());
+        $next.addEventListener('click', () => book.flipNext());
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowRight') book.flipNext();
+          if (e.key === 'ArrowLeft')  book.flipPrev();
+        });
+
+        book.on('flip', updateLabel);
+        book.on('changeOrientation', updateLabel);
+
+        // First label once pages are in
+        updateLabel();
+      } catch (e) {
+        console.error(e);
+        showError('There was a problem initializing the flipbook. Open DevTools → Console and Network for the exact file that failed to load.');
       }
-
-      // 3) Load
-      book.loadFromImages(pages);
-
-      // Optional arrows
-      document.addEventListener('keydown', e => {
-        if (e.key === 'ArrowRight') book.flipNext();
-        if (e.key === 'ArrowLeft') book.flipP
+    })();
+  </script>
+</body>
+</html>

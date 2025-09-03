@@ -1,110 +1,11 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Flipbook Self-Test</title>
-  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js" defer></script>
-  <style>
-    html, body { height: 100%; margin: 0; background: #111; color: #f0f0f0; font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-    .wrap { min-height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
-    header, footer { padding: 10px 16px; display: flex; gap: 12px; align-items: center; justify-content: space-between; border-bottom: 1px solid #2a2a2a; }
-    footer { border-top: 1px solid #2a2a2a; border-bottom: none; }
-    #book { width: min(92vw, 1100px); height: min(70vh, 720px); margin: 16px auto; }
-    .btn { cursor: pointer; padding: 6px 10px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #eee; }
-    .status { text-align: center; margin-bottom: 8px; opacity: .9; white-space: pre-wrap; }
-    #error { color: #ffd2d2; }
-    code { background: #1c1c1c; padding: 2px 6px; border-radius: 6px; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <div>
-        <button class="btn" id="prev">◀︎ Prev</button>
-        <button class="btn" id="next">Next ▶︎</button>
-      </div>
-      <div id="label">Loading…</div>
-    </header>
-
-    <main>
-      <div id="book" aria-label="Flipbook canvas"></div>
-      <div id="error" class="status"></div>
-      <div id="log" class="status"></div>
-    </main>
-
-    <footer>
-      <small>Flipbook Self-Test, inline pages</small>
-      <small>If this shows colored pages, your library works.</small>
-    </footer>
-  </div>
-
-  <script>
-    // Tiny inline PNG pages, no external images involved.
-    // Page A: blue, Page B: green, Page C: orange.
-    const pages = [
-      // 800x1100 solid blue PNG
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4AAAAVsCAYAAABpS1y/AAAACXBIWXMAAAsSAAALEgHS3X78AAABM0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgLELJFoAAe9p3n8AAAAASUVORK5CYII=",
-      // 800x1100 solid green PNG
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4AAAAVsCAYAAABpS1y/AAAACXBIWXMAAAsSAAALEgHS3X78AAABM0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgLELJFoAAe9p3n8AAAAASUVORK5CYII=",
-      // 800x1100 solid orange PNG (same size, different later fill via canvas trick below)
-    ];
-
-    // Make third page orange by drawing over a blue data URL once, to keep things tiny.
-    function makeOrangeDataUrl() {
-      const c = document.createElement('canvas');
-      c.width = 800; c.height = 1100;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#ff8a00';
-      ctx.fillRect(0, 0, c.width, c.height);
-      return c.toDataURL('image/png');
-    }
-    pages[2] = makeOrangeDataUrl();
-
-    function log(msg) {
-      const el = document.getElementById('log');
-      el.textContent += (el.textContent ? "\n" : "") + msg;
-      console.log(msg);
-    }
-    function showError(msg) {
-      const el = document.getElementById('error');
-      el.textContent = msg;
-      console.error(msg);
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-      try {
-        const root = document.getElementById('book');
-        const flip = new St.PageFlip(root, {
-          width: 772, height: 1000, size: 'stretch',
-          showCover: true, mobileScrollSupport: true, drawShadow: true
-        });
-        log('PageFlip constructed.');
-
-        flip.loadFromImages(pages);
-        log('Loaded inline pages.');
-
-        const $label = document.getElementById('label');
-        const updateLabel = () => {
-          $label.textContent = `Page ${flip.getCurrentPageIndex() + 1} of ${flip.getPageCount()}`;
-        };
-        flip.on('flip', updateLabel);
-        flip.on('changeOrientation', updateLabel);
-        updateLabel();
-
-        document.getElementById('prev').onclick = () => flip.flipPrev();
-        document.getElementById('next').onclick = () => flip.flipNext();
-        document.addEventListener('keydown', e => {
-          if (e.key === 'ArrowLeft') flip.flipPrev();
-          if (e.key === 'ArrowRight') flip.flipNext();
-        });
-
-        // Expose for debugging
-        window._flip = flip;
-      } catch (e) {
-        showError('Failed to initialize PageFlip. See Console for details.');
-      }
-    });
-  </script>
-</body>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Test Page</title>
+  </head>
+  <body style="background:#111; color:white; font-family:sans-serif;">
+    <h1>Hello from GitHub Pages</h1>
+    <p>If you can see this, your site is working and serving the file correctly.</p>
+  </body>
 </html>

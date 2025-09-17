@@ -8,18 +8,23 @@
   <style>
     html, body { height:100%; margin:0; background:#111; color:#eee; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; overflow:hidden; }
 
-    /* Only our viewer is visible */
+    /* Hide everything except our viewer */
     body > * { display:none !important; }
     #stage, #book, .nav, #error { display:block !important; }
 
-    #stage { position:fixed; inset:0; display:grid; place-items:center; }
+    /* Stage fills the window height; allow horizontal overflow if spread is wider */
+    #stage {
+      position:fixed; inset:0;
+      display:grid; place-items:center;
+      overflow-x:auto; overflow-y:hidden;
+      scrollbar-width:none;
+    }
+    #stage::-webkit-scrollbar { display:none; }
 
-    /* The book element has a *logical* spread size; we scale it if needed. */
+    /* Book has an exact spread size; no transforms, so height === window height */
     #book {
-      width: var(--book-w);   /* spread width in CSS px */
-      height: var(--book-h);  /* equals window height */
-      transform: scale(var(--book-scale, 1));
-      transform-origin: center center;
+      width: var(--book-w);  /* 2 * page width (css px) */
+      height: var(--book-h); /* = window height (css px) */
     }
 
     .nav { position:fixed; top:0; bottom:0; width:25vw; z-index:15; }
@@ -40,10 +45,11 @@
     /* Images: /Pages/Page.jpg, then /Pages/Page2.jpg … /Pages/Page35.jpg */
     const pages = ['Pages/Page.jpg']; for (let i=2;i<=35;i++) pages.push(`Pages/Page${i}.jpg`);
 
-    // Source page dimensions (pixels)
-    const SRC_W = 2550, SRC_H = 3300, PAGE_ASPECT = SRC_W / SRC_H;
+    // Source page dimensions (pixels) — 8.5x11 at 300ppi = 2550x3300
+    const SRC_W = 2550, SRC_H = 3300;
+    const PAGE_ASPECT = SRC_W / SRC_H; // width / height
 
-    const DPR_CAP = 3;                       // raise to 4 if you want, at a memory cost
+    const DPR_CAP = 3;                        // raise to 4 if you really want
     const dpr = () => Math.max(1, Math.min(window.devicePixelRatio || 1, DPR_CAP));
 
     const $book = document.getElementById('book');
@@ -55,51 +61,50 @@
       return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(src); i.onerror=()=>rej(new Error('Missing image: '+src)); i.src=src+'?v='+Date.now(); });
     }
 
-    // We guarantee: page CSS height == window height.
-    // Spread CSS width = 2 * (vh * aspect).
-    // If spread width > vw, we scale the whole book down with CSS transform so it fits.
-    function computeLayout() {
-      const vw = window.innerWidth;
+    // Height-fit layout: per-page CSS height == window height; width derived by aspect.
+    function computeSizes() {
       const vh = window.innerHeight;
 
-      const pageCssH = vh;                  // requirement: page height == window height
-      const pageCssW = pageCssH * PAGE_ASPECT;
+      const pageCssH = vh;                     // exact requirement
+      const pageCssW = pageCssH * PAGE_ASPECT; // keep aspect, no stretching
 
-      const spreadCssW = 2 * pageCssW;      // two pages side-by-side
-      const spreadCssH = pageCssH;
+      const spreadCssW = Math.round(2 * pageCssW);
+      const spreadCssH = Math.round(pageCssH);
 
-      // Scale to fit width if needed (height stays vh visually because we scale uniformly)
-      const scale = spreadCssW > vw ? (vw / spreadCssW) : 1;
-
-      // Render buffer per page in device pixels (never upscale past source)
+      // Render buffer per page in device pixels; never upscale past source
       const pxH = Math.min(SRC_H, Math.round(pageCssH * dpr()));
       const pxW = Math.min(SRC_W, Math.round(pageCssW * dpr()));
 
-      return {
-        spreadCssW: Math.round(spreadCssW),
-        spreadCssH: Math.round(spreadCssH),
-        scale,
-        pagePxW: pxW,
-        pagePxH: pxH
-      };
+      // Ensure canvas aspect matches image aspect to prevent any stretch
+      const ratioCanvas = pxW / pxH;
+      const ratioImage  = PAGE_ASPECT;
+      if (Math.abs(ratioCanvas - ratioImage) > 0.001) {
+        // correct by tying one dimension to the other
+        const fixedW = Math.min(SRC_W, Math.round(pxH * PAGE_ASPECT));
+        const fixedH = Math.min(SRC_H, Math.round(pxW / PAGE_ASPECT));
+        // choose the pair that keeps both within source bounds
+        if (fixedW <= SRC_W && fixedW > 0) { return { spreadCssW, spreadCssH, pagePxW: fixedW, pagePxH: pxH }; }
+        else { return { spreadCssW, spreadCssH, pagePxW: pxW, pagePxH: fixedH }; }
+      }
+
+      return { spreadCssW, spreadCssH, pagePxW: pxW, pagePxH: pxH };
     }
 
     function init() {
-      const { spreadCssW, spreadCssH, scale, pagePxW, pagePxH } = computeLayout();
+      const { spreadCssW, spreadCssH, pagePxW, pagePxH } = computeSizes();
 
-      // Set CSS variables so the container has the correct logical size and scale.
+      // Lock the container CSS to exact spread size: height === window height
       $book.style.setProperty('--book-w', spreadCssW + 'px');
       $book.style.setProperty('--book-h', spreadCssH + 'px');
-      $book.style.setProperty('--book-scale', scale.toString());
 
       if (book) { try { book.destroy(); } catch {} book = null; }
 
       book = new St.PageFlip($book, {
-        width:  pagePxW,        // per-page render buffer in device pixels
+        width:  pagePxW,        // per-page render buffer (device pixels)
         height: pagePxH,
-        size: 'fixed',          // do not let library stretch the canvas
-        showCover: true,        // single cover, then spreads
-        usePortrait: false,     // force two pages when possible
+        size: 'fixed',          // do NOT stretch — use the exact per-page size
+        showCover: true,        // cover single, then spreads
+        usePortrait: false,     // always two pages when possible
         mobileScrollSupport: true,
         drawShadow: true,
         maxShadowOpacity: 0.18,
@@ -117,13 +122,10 @@
       });
     }
 
-    // Debounced resize
-    let timer; window.addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(init, 100); });
+    let t; window.addEventListener('resize', ()=>{ clearTimeout(t); t=setTimeout(init, 100); });
 
-    (async()=>{
-      try { await Promise.all(pages.map(preload)); init(); }
-      catch(e){ showError(e && e.message ? e.message : String(e)); }
-    })();
+    (async()=>{ try { await Promise.all(pages.map(preload)); init(); }
+                catch(e){ showError(e && e.message ? e.message : String(e)); }})();
   </script>
 </body>
 </html>

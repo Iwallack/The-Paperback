@@ -13,10 +13,10 @@
       background: #111;
       color: #eee;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      overflow: hidden; /* full-bleed, no scrollbars */
+      overflow: hidden; /* full-bleed */
     }
 
-    /* Stage centers the book. No header, no footer. */
+    /* Center the book; no header/footer UI */
     #stage {
       position: fixed;
       inset: 0;
@@ -24,17 +24,23 @@
       place-items: center;
     }
 
-    /* Book size is set from JS to match aspect ratio. */
+    /* Book (spread) CSS size gets set from JS so the canvas isn't stretched */
     #book {
       width: var(--book-w, 100vw);
       height: var(--book-h, 100vh);
-      will-change: transform;
     }
 
-    /* Hide any accidental leftover UI from old builds */
-    .controls, header, .topbar { display: none !important; }
+    /* Invisible click zones for navigation */
+    .nav {
+      position: fixed;
+      top: 0; bottom: 0;
+      width: 25vw;
+      z-index: 15;
+    }
+    .nav.left  { left: 0; }
+    .nav.right { right: 0; }
 
-    /* Error bubble, just in case */
+    /* Error bubble */
     #error {
       position: fixed;
       left: 50%;
@@ -47,23 +53,12 @@
       z-index: 20;
       pointer-events: none;
     }
-
-    /* Invisible click zones for navigation */
-    .nav {
-      position: fixed;
-      top: 0; bottom: 0;
-      width: 25vw;
-      z-index: 15;
-    }
-    .nav.left  { left: 0; }
-    .nav.right { right: 0; }
   </style>
 </head>
 <body>
   <div id="stage">
     <div id="book" aria-label="Flipbook"></div>
   </div>
-
   <div class="nav left"  aria-hidden="true"></div>
   <div class="nav right" aria-hidden="true"></div>
   <div id="error" role="alert"></div>
@@ -74,15 +69,17 @@
     const pages = ['Pages/Page.jpg'];
     for (let i = 2; i <= 35; i++) pages.push(`Pages/Page${i}.jpg`);
 
-    const DPR   = Math.max(1, Math.min(window.devicePixelRatio || 1, 3)); // cap for perf
-    const IMG_W = 2550;  // source page pixels
-    const IMG_H = 3300;
-    const ASPECT = IMG_W / IMG_H; // 0.7727…
+    // Your source page size (pixels)
+    const SRC_W = 2550;
+    const SRC_H = 3300;
+    const PAGE_ASPECT = SRC_W / SRC_H;
+
+    // Cap DPR a bit for perf; never upscale beyond source size.
+    function getDPR() { return Math.max(1, Math.min(window.devicePixelRatio || 1, 3)); }
 
     const $book = document.getElementById('book');
     const $err  = document.getElementById('error');
-
-    let bookInstance = null;
+    let book;
 
     function showError(msg){ $err.textContent = msg; }
 
@@ -95,24 +92,28 @@
       });
     }
 
-    /* Compute per-page CSS size so a two-page spread fits the viewport without scaling the canvas later. */
+    // Compute per-page CSS size so a TWO-PAGE SPREAD fits the viewport.
+    // Then set per-page canvas render size = CSS * DPR, but clamp to source size.
     function computeSizes() {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
+      const DPR = getDPR();
 
-      // Start with full height, then clamp to half viewport width if needed.
+      // Start with max height; fit two pages side-by-side
       let pageCssH = vh;
-      let pageCssW = pageCssH * ASPECT;
+      let pageCssW = pageCssH * PAGE_ASPECT;
 
       if (2 * pageCssW > vw) {
+        // Too wide: fit by width instead
         pageCssW = vw / 2;
-        pageCssH = pageCssW / ASPECT;
+        pageCssH = pageCssW / PAGE_ASPECT;
       }
 
-      const pagePxW = Math.round(pageCssW * DPR);
-      const pagePxH = Math.round(pageCssH * DPR);
+      // Device-pixel render size (never exceed original pixels)
+      const pagePxW = Math.min(SRC_W, Math.round(pageCssW * DPR));
+      const pagePxH = Math.min(SRC_H, Math.round(pageCssH * DPR));
 
-      // Book (spread) CSS size for centering.
+      // Spread CSS size for centering
       const bookCssW = Math.round(2 * pageCssW);
       const bookCssH = Math.round(pageCssH);
 
@@ -122,43 +123,40 @@
     function initFlipbook() {
       const { pagePxW, pagePxH, bookCssW, bookCssH } = computeSizes();
 
-      // Set the container CSS size, so PageFlip does not stretch it.
+      // Lock the container CSS size so PageFlip doesn't stretch the canvas
       $book.style.setProperty('--book-w', bookCssW + 'px');
       $book.style.setProperty('--book-h', bookCssH + 'px');
 
-      if (bookInstance) {
-        try { bookInstance.destroy(); } catch {}
-        bookInstance = null;
-      }
+      if (book) { try { book.destroy(); } catch {} book = null; }
 
-      bookInstance = new St.PageFlip($book, {
-        width:  pagePxW,   // canvas render size, per page, in device pixels
+      book = new St.PageFlip($book, {
+        width:  pagePxW,   // render size (per page) in device pixels
         height: pagePxH,
-        size: 'fixed',     // do not stretch, keep the fixed page size we supplied
-        showCover: true,
+        size: 'fixed',     // do not stretch—use our exact per-page size
+        showCover: true,   // cover is a single page; after that it's spreads
+        usePortrait: false, // <— always show two pages (spreads), not single page in tall windows
         mobileScrollSupport: true,
         drawShadow: true,
         maxShadowOpacity: 0.18,
         flippingTime: 650
       });
 
-      bookInstance.loadFromImages(pages);
+      book.loadFromImages(pages);
 
       // Navigation
+      document.querySelector('.nav.left').onclick  = () => book.flipPrev();
+      document.querySelector('.nav.right').onclick = () => book.flipNext();
       document.addEventListener('keydown', e => {
-        if (!bookInstance) return;
-        if (e.key === 'ArrowLeft')  bookInstance.flipPrev();
-        if (e.key === 'ArrowRight') bookInstance.flipNext();
+        if (e.key === 'ArrowLeft')  book.flipPrev();
+        if (e.key === 'ArrowRight') book.flipNext();
       });
-      document.querySelector('.nav.left').onclick  = () => bookInstance.flipPrev();
-      document.querySelector('.nav.right').onclick = () => bookInstance.flipNext();
     }
 
-    // Debounced resize keeps it sharp
+    // Debounced resize to keep it crisp
     let rTimer;
     window.addEventListener('resize', () => {
       clearTimeout(rTimer);
-      rTimer = setTimeout(() => initFlipbook(), 120);
+      rTimer = setTimeout(initFlipbook, 120);
     });
 
     (async () => {

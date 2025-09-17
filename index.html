@@ -21,4 +21,100 @@
     .nav.left  { left:0; }
     .nav.right { right:0; }
 
-    #error { position:fixed; left:50%; top:12px; transform:trans
+    #error { position:fixed; left:50%; top:12px; transform:translateX(-50%); color:#ffd2d2; font-size:14px; white-space:pre-wrap; z-index:20; pointer-events:none; }
+  </style>
+</head>
+<body>
+  <div id="stage"><div id="book" aria-label="Flipbook"></div></div>
+  <div class="nav left"  aria-hidden="true"></div>
+  <div class="nav right" aria-hidden="true"></div>
+  <div id="error" role="alert"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
+  <script>
+    /* Files: /Pages/Page.jpg, then /Pages/Page2.jpg … /Pages/Page35.jpg */
+    const pages = ['Pages/Page.jpg']; for (let i=2;i<=35;i++) pages.push(`Pages/Page${i}.jpg`);
+
+    // Source page size (pixels)
+    const SRC_W = 2550, SRC_H = 3300, PAGE_ASPECT = SRC_W / SRC_H;
+    const DPR_CAP = 3; // raise to 4 on a 5K if you want, but memory goes up
+
+    const $book = document.getElementById('book');
+    const $err  = document.getElementById('error');
+    let book = null;
+
+    function dpr() { return Math.max(1, Math.min(window.devicePixelRatio || 1, DPR_CAP)); }
+    function showError(msg){ $err.textContent = msg; }
+    function preload(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(src); i.onerror=()=>rej(new Error('Missing image: '+src)); i.src=src+'?v='+(Date.now()); }); }
+
+    // Fit a TWO-PAGE SPREAD to the viewport; render each page at device pixels (never upscaling past source)
+    function sizes(){
+      const vw=window.innerWidth, vh=window.innerHeight, DPR=dpr();
+      let pageCssH = vh, pageCssW = pageCssH*PAGE_ASPECT;
+      if (2*pageCssW > vw){ pageCssW = vw/2; pageCssH = pageCssW/PAGE_ASPECT; }
+
+      // canvas buffer sizes per page (device pixels), clamped to original pixels
+      const pagePxW = Math.min(SRC_W, Math.round(pageCssW*DPR));
+      const pagePxH = Math.min(SRC_H, Math.round(pageCssH*DPR));
+
+      return { bookCssW:Math.round(pageCssW*2), bookCssH:Math.round(pageCssH), pagePxW, pagePxH };
+    }
+
+    function init(){
+      const { bookCssW, bookCssH, pagePxW, pagePxH } = sizes();
+
+      // Lock container CSS so library doesn't stretch the canvas
+      $book.style.setProperty('--book-w', bookCssW+'px');
+      $book.style.setProperty('--book-h', bookCssH+'px');
+
+      if (book){ try{book.destroy();}catch{} book=null; }
+
+      book = new St.PageFlip($book, {
+        width: pagePxW,        // per-page render buffer
+        height: pagePxH,
+        size: 'fixed',         // do NOT stretch
+        showCover: true,       // cover as single, then spreads
+        usePortrait: false,    // always two pages when possible
+        mobileScrollSupport: true,
+        drawShadow: true,
+        maxShadowOpacity: 0.18,
+        flippingTime: 650
+      });
+
+      book.loadFromImages(pages);
+
+      // Click/keys
+      document.querySelector('.nav.left').onclick  = () => book.flipPrev();
+      document.querySelector('.nav.right').onclick = () => book.flipNext();
+      document.addEventListener('keydown', e => {
+        if (e.key==='ArrowLeft')  book.flipPrev();
+        if (e.key==='ArrowRight') book.flipNext();
+      });
+
+      // Safety: if any canvas got CSS-scaled, re-sync its backing store to avoid blur
+      // (PageFlip usually does this, but Safari can be fussy.)
+      setTimeout(() => {
+        document.querySelectorAll('#book canvas').forEach(c => {
+          const DPR = dpr();
+          const cssW = Math.round(c.clientWidth);
+          const cssH = Math.round(c.clientHeight);
+          const wantW = Math.min(SRC_W, Math.round(cssW * DPR));
+          const wantH = Math.min(SRC_H, Math.round(cssH * DPR));
+          if (c.width !== wantW || c.height !== wantH) {
+            c.width = wantW; c.height = wantH;
+            const ctx = c.getContext('2d');
+            if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }
+          }
+        });
+      }, 50);
+    }
+
+    let t; window.addEventListener('resize', ()=>{ clearTimeout(t); t=setTimeout(init,120); });
+
+    (async()=>{
+      try { await Promise.all(pages.map(preload)); init(); }
+      catch(e){ showError(e && e.message ? e.message : String(e)); }
+    })();
+  </script>
+</body>
+</html>

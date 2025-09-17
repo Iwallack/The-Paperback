@@ -14,10 +14,11 @@
       color: #eee;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
     }
+    /* Spread fits exactly: 2 * 541 = 1082 */
     #book {
       width: 100%;
-      max-width: 1100px;
-      height: 700px;
+      max-width: 1133px;  /* spread = 2 pages */
+      height: 824px;      /* per-page height */
       margin: 0px auto;
     }
     #error {
@@ -34,9 +35,9 @@
 
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
   <script>
-    // Build exact list: Page.jpg (cover) + Page2.jpg … Page35.jpg
+    // Build exact list: Page.jpg (cover) + Page2.jpg … Page17.jpg
     const pages = ['Pages/Page.jpg'];
-    for (let i = 2; i <= 35; i++) {
+    for (let i = 2; i <= 17; i++) {
       pages.push(`Pages/Page${i}.jpg`);
     }
 
@@ -48,7 +49,7 @@
         const img = new Image();
         img.onload = () => resolve(src);
         img.onerror = () => reject(src);
-        img.src = src + '?v=' + Date.now(); // cache-bust
+        img.src = src + '?v=' + Date.now(); // cache-bust during local testing
       });
     }
     function showError(msg){ $err.textContent = msg; }
@@ -61,10 +62,11 @@
           catch { showError('Missing image:\n' + p + '\nCheck spelling/case in Pages folder.'); return; }
         }
 
+        // Per-page size that matches the container height (no browser scaling)
         const book = new St.PageFlip($book, {
-          width: 772,
-          height: 1000,
-          size: 'stretch',
+          width: 566,          // per-page render width (keeps 8.5x11 aspect vs 700px height)
+          height: 824,         // per-page render height
+          size: 'fixed',       // IMPORTANT: do not stretch the canvas
           showCover: true,
           mobileScrollSupport: true,
           drawShadow: true,

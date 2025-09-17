@@ -4,128 +4,66 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>The Paperback — Flipbook</title>
+
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.min.css">
   <style>
-    html, body { height:100%; margin:0; background:#111; color:#eee; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; overflow:hidden; }
-
-    /* Hide everything except our viewer */
-    body > * { display:none !important; }
-    #stage, #book, .nav, #error { display:block !important; }
-
-    /* Stage fills the window height; allow horizontal overflow if spread is wider */
-    #stage {
-      position:fixed; inset:0;
-      display:grid; place-items:center;
-      overflow-x:auto; overflow-y:hidden;
-      scrollbar-width:none;
-    }
-    #stage::-webkit-scrollbar { display:none; }
-
-    /* Book has an exact spread size; no transforms, so height === window height */
-    #book {
-      width: var(--book-w);  /* 2 * page width (css px) */
-      height: var(--book-h); /* = window height (css px) */
-    }
-
-    .nav { position:fixed; top:0; bottom:0; width:25vw; z-index:15; }
-    .nav.left  { left:0; }
-    .nav.right { right:0; }
-
-    #error { position:fixed; left:50%; top:12px; transform:translateX(-50%); color:#ffd2d2; font-size:14px; white-space:pre-wrap; z-index:20; pointer-events:none; }
+    html, body { height:100%; margin:0; background:#111; color:#eee; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+    #book { width:100%; max-width:1100px; height:700px; margin:24px auto; }
+    /* removed: .controls, button, #label */
+    #error { text-align:center; color:#ffd2d2; white-space:pre-wrap; margin-top:8px; }
   </style>
 </head>
 <body>
-  <div id="stage"><div id="book" aria-label="Flipbook"></div></div>
-  <div class="nav left"  aria-hidden="true"></div>
-  <div class="nav right" aria-hidden="true"></div>
+  <!-- removed the controls UI -->
+  <div id="book"></div>
   <div id="error" role="alert"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
   <script>
-    /* Images: /Pages/Page.jpg, then /Pages/Page2.jpg … /Pages/Page35.jpg */
-    const pages = ['Pages/Page.jpg']; for (let i=2;i<=35;i++) pages.push(`Pages/Page${i}.jpg`);
+    // Build exact list: Page.jpg (cover) + Page2.jpg … Page35.jpg
+    const pages = ['Pages/Page.jpg'];
+    for (let i = 2; i <= 35; i++) {
+      pages.push(`Pages/Page${i}.jpg`);
+    }
 
-    // Source page dimensions (pixels) — 8.5x11 at 300ppi = 2550x3300
-    const SRC_W = 2550, SRC_H = 3300;
-    const PAGE_ASPECT = SRC_W / SRC_H; // width / height
+    const $book  = document.getElementById('book');
+    const $err   = document.getElementById('error');
 
-    const DPR_CAP = 3;                        // raise to 4 if you really want
-    const dpr = () => Math.max(1, Math.min(window.devicePixelRatio || 1, DPR_CAP));
-
-    const $book = document.getElementById('book');
-    const $err  = document.getElementById('error');
-    let book = null;
-
+    function probe(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(src);
+        img.onerror = () => reject(src);
+        img.src = src + '?v=' + Date.now(); // cache-bust
+      });
+    }
     function showError(msg){ $err.textContent = msg; }
-    function preload(src){
-      return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(src); i.onerror=()=>rej(new Error('Missing image: '+src)); i.src=src+'?v='+Date.now(); });
-    }
 
-    // Height-fit layout: per-page CSS height == window height; width derived by aspect.
-    function computeSizes() {
-      const vh = window.innerHeight;
+    (async () => {
+      try {
+        // Verify each image exists
+        for (const p of pages) {
+          try { await probe(p); }
+          catch { showError('Missing image:\n' + p + '\nCheck spelling/case in Pages folder.'); return; }
+        }
 
-      const pageCssH = vh;                     // exact requirement
-      const pageCssW = pageCssH * PAGE_ASPECT; // keep aspect, no stretching
+        const book = new St.PageFlip($book, {
+          width: 772, height: 1000, size: 'stretch',
+          showCover: true, mobileScrollSupport: true, drawShadow: true, flippingTime: 800
+        });
 
-      const spreadCssW = Math.round(2 * pageCssW);
-      const spreadCssH = Math.round(pageCssH);
+        book.loadFromImages(pages);
 
-      // Render buffer per page in device pixels; never upscale past source
-      const pxH = Math.min(SRC_H, Math.round(pageCssH * dpr()));
-      const pxW = Math.min(SRC_W, Math.round(pageCssW * dpr()));
+        // Keep keyboard navigation (not UI)
+        document.addEventListener('keydown', e => {
+          if (e.key === 'ArrowLeft')  book.flipPrev();
+          if (e.key === 'ArrowRight') book.flipNext();
+        });
 
-      // Ensure canvas aspect matches image aspect to prevent any stretch
-      const ratioCanvas = pxW / pxH;
-      const ratioImage  = PAGE_ASPECT;
-      if (Math.abs(ratioCanvas - ratioImage) > 0.001) {
-        // correct by tying one dimension to the other
-        const fixedW = Math.min(SRC_W, Math.round(pxH * PAGE_ASPECT));
-        const fixedH = Math.min(SRC_H, Math.round(pxW / PAGE_ASPECT));
-        // choose the pair that keeps both within source bounds
-        if (fixedW <= SRC_W && fixedW > 0) { return { spreadCssW, spreadCssH, pagePxW: fixedW, pagePxH: pxH }; }
-        else { return { spreadCssW, spreadCssH, pagePxW: pxW, pagePxH: fixedH }; }
+      } catch (e) {
+        showError('Flipbook failed to initialize.\n' + (e && e.message ? e.message : e));
       }
-
-      return { spreadCssW, spreadCssH, pagePxW: pxW, pagePxH: pxH };
-    }
-
-    function init() {
-      const { spreadCssW, spreadCssH, pagePxW, pagePxH } = computeSizes();
-
-      // Lock the container CSS to exact spread size: height === window height
-      $book.style.setProperty('--book-w', spreadCssW + 'px');
-      $book.style.setProperty('--book-h', spreadCssH + 'px');
-
-      if (book) { try { book.destroy(); } catch {} book = null; }
-
-      book = new St.PageFlip($book, {
-        width:  pagePxW,        // per-page render buffer (device pixels)
-        height: pagePxH,
-        size: 'fixed',          // do NOT stretch — use the exact per-page size
-        showCover: true,        // cover single, then spreads
-        usePortrait: false,     // always two pages when possible
-        mobileScrollSupport: true,
-        drawShadow: true,
-        maxShadowOpacity: 0.18,
-        flippingTime: 650
-      });
-
-      book.loadFromImages(pages);
-
-      // Navigation
-      document.querySelector('.nav.left').onclick  = () => book.flipPrev();
-      document.querySelector('.nav.right').onclick = () => book.flipNext();
-      document.addEventListener('keydown', e => {
-        if (e.key==='ArrowLeft')  book.flipPrev();
-        if (e.key==='ArrowRight') book.flipNext();
-      });
-    }
-
-    let t; window.addEventListener('resize', ()=>{ clearTimeout(t); t=setTimeout(init, 100); });
-
-    (async()=>{ try { await Promise.all(pages.map(preload)); init(); }
-                catch(e){ showError(e && e.message ? e.message : String(e)); }})();
+    })();
   </script>
 </body>
 </html>

@@ -17,8 +17,8 @@
     /* Spread fits exactly: 2 * 541 = 1082 */
     #book {
       width: 100%;
-      max-width: 1133px;  /* spread = 2 pages */
-      height: 824px;      /* per-page height */
+      max-width: 1100px;  /* spread = 2 pages */
+      height: 800px;      /* per-page height */
       margin: 0px auto;
     }
     #error {
@@ -64,8 +64,8 @@
 
         // Per-page size that matches the container height (no browser scaling)
         const book = new St.PageFlip($book, {
-          width: 566,          // per-page render width (keeps 8.5x11 aspect vs 700px height)
-          height: 824,         // per-page render height
+          width: 550,          // per-page render width (keeps 8.5x11 aspect vs 700px height)
+          height: 800,         // per-page render height
           size: 'fixed',       // IMPORTANT: do not stretch the canvas
           showCover: true,
           mobileScrollSupport: true,

@@ -6,16 +6,21 @@
   <title>The Paperback — Flipbook</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/css/page-flip.min.css">
   <style>
-    /* Full-bleed stage; kill scrollbars */
     html, body { height:100%; margin:0; background:#111; color:#eee; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; overflow:hidden; }
 
-    /* Nuclear option: hide EVERYTHING ... */
+    /* Only our viewer is visible */
     body > * { display:none !important; }
-    /* ...except our viewer pieces */
     #stage, #book, .nav, #error { display:block !important; }
 
     #stage { position:fixed; inset:0; display:grid; place-items:center; }
-    #book  { width:var(--book-w,100vw); height:var(--book-h,100vh); }
+
+    /* The book element has a *logical* spread size; we scale it if needed. */
+    #book {
+      width: var(--book-w);   /* spread width in CSS px */
+      height: var(--book-h);  /* equals window height */
+      transform: scale(var(--book-scale, 1));
+      transform-origin: center center;
+    }
 
     .nav { position:fixed; top:0; bottom:0; width:25vw; z-index:15; }
     .nav.left  { left:0; }
@@ -32,49 +37,69 @@
 
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
   <script>
-    /* Files: /Pages/Page.jpg, then /Pages/Page2.jpg … /Pages/Page35.jpg */
+    /* Images: /Pages/Page.jpg, then /Pages/Page2.jpg … /Pages/Page35.jpg */
     const pages = ['Pages/Page.jpg']; for (let i=2;i<=35;i++) pages.push(`Pages/Page${i}.jpg`);
 
-    // Source page size (pixels)
+    // Source page dimensions (pixels)
     const SRC_W = 2550, SRC_H = 3300, PAGE_ASPECT = SRC_W / SRC_H;
-    const DPR_CAP = 3; // raise to 4 on a 5K if you want, but memory goes up
+
+    const DPR_CAP = 3;                       // raise to 4 if you want, at a memory cost
+    const dpr = () => Math.max(1, Math.min(window.devicePixelRatio || 1, DPR_CAP));
 
     const $book = document.getElementById('book');
     const $err  = document.getElementById('error');
     let book = null;
 
-    function dpr() { return Math.max(1, Math.min(window.devicePixelRatio || 1, DPR_CAP)); }
     function showError(msg){ $err.textContent = msg; }
-    function preload(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(src); i.onerror=()=>rej(new Error('Missing image: '+src)); i.src=src+'?v='+(Date.now()); }); }
-
-    // Fit a TWO-PAGE SPREAD to the viewport; render each page at device pixels (never upscaling past source)
-    function sizes(){
-      const vw=window.innerWidth, vh=window.innerHeight, DPR=dpr();
-      let pageCssH = vh, pageCssW = pageCssH*PAGE_ASPECT;
-      if (2*pageCssW > vw){ pageCssW = vw/2; pageCssH = pageCssW/PAGE_ASPECT; }
-
-      // canvas buffer sizes per page (device pixels), clamped to original pixels
-      const pagePxW = Math.min(SRC_W, Math.round(pageCssW*DPR));
-      const pagePxH = Math.min(SRC_H, Math.round(pageCssH*DPR));
-
-      return { bookCssW:Math.round(pageCssW*2), bookCssH:Math.round(pageCssH), pagePxW, pagePxH };
+    function preload(src){
+      return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(src); i.onerror=()=>rej(new Error('Missing image: '+src)); i.src=src+'?v='+Date.now(); });
     }
 
-    function init(){
-      const { bookCssW, bookCssH, pagePxW, pagePxH } = sizes();
+    // We guarantee: page CSS height == window height.
+    // Spread CSS width = 2 * (vh * aspect).
+    // If spread width > vw, we scale the whole book down with CSS transform so it fits.
+    function computeLayout() {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
 
-      // Lock container CSS so library doesn't stretch the canvas
-      $book.style.setProperty('--book-w', bookCssW+'px');
-      $book.style.setProperty('--book-h', bookCssH+'px');
+      const pageCssH = vh;                  // requirement: page height == window height
+      const pageCssW = pageCssH * PAGE_ASPECT;
 
-      if (book){ try{book.destroy();}catch{} book=null; }
+      const spreadCssW = 2 * pageCssW;      // two pages side-by-side
+      const spreadCssH = pageCssH;
+
+      // Scale to fit width if needed (height stays vh visually because we scale uniformly)
+      const scale = spreadCssW > vw ? (vw / spreadCssW) : 1;
+
+      // Render buffer per page in device pixels (never upscale past source)
+      const pxH = Math.min(SRC_H, Math.round(pageCssH * dpr()));
+      const pxW = Math.min(SRC_W, Math.round(pageCssW * dpr()));
+
+      return {
+        spreadCssW: Math.round(spreadCssW),
+        spreadCssH: Math.round(spreadCssH),
+        scale,
+        pagePxW: pxW,
+        pagePxH: pxH
+      };
+    }
+
+    function init() {
+      const { spreadCssW, spreadCssH, scale, pagePxW, pagePxH } = computeLayout();
+
+      // Set CSS variables so the container has the correct logical size and scale.
+      $book.style.setProperty('--book-w', spreadCssW + 'px');
+      $book.style.setProperty('--book-h', spreadCssH + 'px');
+      $book.style.setProperty('--book-scale', scale.toString());
+
+      if (book) { try { book.destroy(); } catch {} book = null; }
 
       book = new St.PageFlip($book, {
-        width: pagePxW,        // per-page render buffer
+        width:  pagePxW,        // per-page render buffer in device pixels
         height: pagePxH,
-        size: 'fixed',         // do NOT stretch
-        showCover: true,       // cover as single, then spreads
-        usePortrait: false,    // always two pages when possible
+        size: 'fixed',          // do not let library stretch the canvas
+        showCover: true,        // single cover, then spreads
+        usePortrait: false,     // force two pages when possible
         mobileScrollSupport: true,
         drawShadow: true,
         maxShadowOpacity: 0.18,
@@ -83,33 +108,17 @@
 
       book.loadFromImages(pages);
 
-      // Click/keys
+      // Navigation
       document.querySelector('.nav.left').onclick  = () => book.flipPrev();
       document.querySelector('.nav.right').onclick = () => book.flipNext();
       document.addEventListener('keydown', e => {
         if (e.key==='ArrowLeft')  book.flipPrev();
         if (e.key==='ArrowRight') book.flipNext();
       });
-
-      // Safety: if any canvas got CSS-scaled, re-sync its backing store to avoid blur
-      // (PageFlip usually does this, but Safari can be fussy.)
-      setTimeout(() => {
-        document.querySelectorAll('#book canvas').forEach(c => {
-          const DPR = dpr();
-          const cssW = Math.round(c.clientWidth);
-          const cssH = Math.round(c.clientHeight);
-          const wantW = Math.min(SRC_W, Math.round(cssW * DPR));
-          const wantH = Math.min(SRC_H, Math.round(cssH * DPR));
-          if (c.width !== wantW || c.height !== wantH) {
-            c.width = wantW; c.height = wantH;
-            const ctx = c.getContext('2d');
-            if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }
-          }
-        });
-      }, 50);
     }
 
-    let t; window.addEventListener('resize', ()=>{ clearTimeout(t); t=setTimeout(init,120); });
+    // Debounced resize
+    let timer; window.addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(init, 100); });
 
     (async()=>{
       try { await Promise.all(pages.map(preload)); init(); }
